@@ -79,6 +79,7 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
+// [엄격한 요약 모드] 월간 회고 API
 app.post('/monthly-summary', async (req, res) => {
     const { diaries } = req.body; 
 
@@ -96,32 +97,28 @@ app.post('/monthly-summary', async (req, res) => {
 
         const systemPrompt = `
             You are the "Chronicler of the Soul." 
-            The user provides a list of diary entries from the past month. Each entry starts with a [Date].
+            The user provides a list of diary entries.
             
-            Your task is to select the **most impactful 2 sentences** for EACH virtue category.
+            Your task is to **EXTRACT** the most impactful **short quote (1 sentence)** for EACH virtue category.
             
-            [CRITICAL REQUIREMENT: ORDERING]
-            You must arrange the 2 selected sentences in a logical narrative order:
-            1. **Chronological Order:** The sentence from an earlier date must come first.
-            2. **Logical Flow:** If they are from the same date, place the **"Event/Action" first**, and the **"Reflection/Result" second**.
-               - Bad: "I felt relieved." -> "I finished my homework."
-               - Good: "I finished my homework." -> "I felt relieved."
-
-            [Selection Logic]
-            - Look for sentences that best represent each virtue.
-            - Extract the **exact Date** associated with that specific diary entry.
-            - The selected text must be in **Korean**.
+            [STRICT CONSTRAINTS - DO NOT IGNORE]
+            1. **NEVER return the full diary entry.** You must select only ONE specific sentence.
+            2. **Length Limit:** The selected text MUST be **under 60 characters** (Korean).
+            3. **Formatting:** If the sentence is too long, summarize it into a short, poetic quote.
+            4. **Ordering:** - If two quotes are selected, place the chronologically earlier one first.
+               - Ensure a logical flow (Action -> Realization).
 
             [Output Format - Strictly JSON]
             {
                 "courage": [
-                    { "text": "Event or earlier date quote", "date": "YYYY-MM-DD" },
-                    { "text": "Reflection or later date quote", "date": "YYYY-MM-DD" }
+                    { "text": "짧고 강렬한 한 문장", "date": "YYYY-MM-DD" },
+                    { "text": "또 다른 짧은 문장", "date": "YYYY-MM-DD" }
                 ],
                 ... (wisdom, kindness, diligence, serenity)
             }
         `;
 
+        // 너무 긴 경우를 대비해 길이 제한은 유지
         const contentToSend = formattedDiaries.substring(0, 25000); 
 
         const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -134,10 +131,10 @@ app.post('/monthly-summary', async (req, res) => {
                 model: "gpt-4o-mini", 
                 messages: [
                     { role: "system", content: systemPrompt },
-                    { role: "user", content: `Here are my diaries with dates:\n${contentToSend}` }
+                    { role: "user", content: `Extract short quotes from these diaries:\n${contentToSend}` }
                 ],
                 response_format: { type: "json_object" },
-                temperature: 0.5 // 창의성(0.7)보다 논리(0.5)를 높여서 순서를 잘 지키게 함
+                temperature: 0.4 // 창의성을 좀 더 낮춰서(0.4) 지시를 칼같이 지키게 함
             })
         });
 
