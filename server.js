@@ -79,7 +79,6 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// [수정됨] 월간 회고 API (날짜 포함 반환)
 app.post('/monthly-summary', async (req, res) => {
     const { diaries } = req.body; 
 
@@ -90,8 +89,6 @@ app.post('/monthly-summary', async (req, res) => {
     console.log(`📅 월간 회고 요청: 총 ${diaries.length}개의 일기 분석 중...`);
 
     try {
-        // 1. [핵심] AI에게 보낼 데이터 가공: "날짜" 정보를 텍스트와 함께 묶어서 보냅니다.
-        // 예: "[Date: 2024-05-21] 오늘은 힘든 하루였다..."
         const formattedDiaries = diaries.map(d => {
             const dateLabel = d.date_str || "Unknown Date"; 
             return `[Date: ${dateLabel}]\n${d.content}`;
@@ -101,28 +98,30 @@ app.post('/monthly-summary', async (req, res) => {
             You are the "Chronicler of the Soul." 
             The user provides a list of diary entries from the past month. Each entry starts with a [Date].
             
-            Your task is to select the **most impactful, poetic, or meaningful 2 sentences** for EACH virtue category (Courage, Wisdom, Kindness, Diligence, Serenity).
+            Your task is to select the **most impactful 2 sentences** for EACH virtue category.
             
-            [CRITICAL REQUIREMENT]
-            For each selected quote, you MUST extract the **exact Date** associated with that specific diary entry.
+            [CRITICAL REQUIREMENT: ORDERING]
+            You must arrange the 2 selected sentences in a logical narrative order:
+            1. **Chronological Order:** The sentence from an earlier date must come first.
+            2. **Logical Flow:** If they are from the same date, place the **"Event/Action" first**, and the **"Reflection/Result" second**.
+               - Bad: "I felt relieved." -> "I finished my homework."
+               - Good: "I finished my homework." -> "I felt relieved."
+
+            [Selection Logic]
+            - Look for sentences that best represent each virtue.
+            - Extract the **exact Date** associated with that specific diary entry.
+            - The selected text must be in **Korean**.
 
             [Output Format - Strictly JSON]
-            The output must be an object where each virtue has an array of objects containing "text" and "date".
-            
-            Example JSON Structure:
             {
                 "courage": [
-                    { "text": "두려움 속에서도 한 걸음을 내딛었다.", "date": "2024-05-21" },
-                    { "text": "떨리는 목소리도 나의 일부임을 인정했다.", "date": "2024-05-25" }
+                    { "text": "Event or earlier date quote", "date": "YYYY-MM-DD" },
+                    { "text": "Reflection or later date quote", "date": "YYYY-MM-DD" }
                 ],
-                "wisdom": [ ... ],
-                "kindness": [ ... ],
-                "diligence": [ ... ],
-                "serenity": [ ... ]
+                ... (wisdom, kindness, diligence, serenity)
             }
         `;
 
-        // 텍스트 길이 제한 (토큰 절약 및 에러 방지)
         const contentToSend = formattedDiaries.substring(0, 25000); 
 
         const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -138,7 +137,7 @@ app.post('/monthly-summary', async (req, res) => {
                     { role: "user", content: `Here are my diaries with dates:\n${contentToSend}` }
                 ],
                 response_format: { type: "json_object" },
-                temperature: 0.7
+                temperature: 0.5 // 창의성(0.7)보다 논리(0.5)를 높여서 순서를 잘 지키게 함
             })
         });
 
@@ -146,8 +145,6 @@ app.post('/monthly-summary', async (req, res) => {
         if (data.error) throw new Error(data.error.message);
 
         const result = JSON.parse(data.choices[0].message.content);
-        
-        console.log("✅ 월간 회고 생성 완료 (날짜 포함)");
         res.json(result);
 
     } catch (error) {
