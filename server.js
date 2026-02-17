@@ -79,7 +79,7 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// [완벽 보강된] 월간 회고 API (다양성 + 순서 + 3줄요약 + 통계)
+// [최종_진짜_최종] 월간 회고 API (정원사 말투 + 다양성 + 순서 + 통계)
 app.post('/monthly-summary', async (req, res) => {
     const { diaries } = req.body; 
 
@@ -113,34 +113,40 @@ app.post('/monthly-summary', async (req, res) => {
             You are the "Master Gardener of the Soul."
             The user provides diary entries from the past month.
             
-            [Task 1: Summary Quotes (Strict Rules)]
-            - Select **2 IMPACTFUL quotes** for EACH virtue category.
-            - **REWRITE** the content as a warm, polite gardener speaking to the user (Korean).
-            - **CRITICAL RULE 1 (Diversity):** Do NOT select two quotes from the SAME diary entry unless unavoidable. Prioritize different dates.
-            - **CRITICAL RULE 2 (Flow):** Ensure logical order (Action -> Realization) or chronological order (Earlier Date -> Later Date).
-            - Extract the exact [Date] for each quote.
+            [Task 1: Summary Messages (Gardener's Voice)]
+            - Create **2 short messages** for EACH virtue category.
+            - **CRITICAL:** Do NOT simply copy/quote the diary. **REWRITE** the event as if you are a warm, observant gardener speaking to the user.
+            - **Language:** Korean (Polite & Poetic 'Haeyo-che').
+            
+            [STYLE EXAMPLES - FOLLOW THIS!]
+            - Input: "I studied hard and finished the project."
+            - Bad (Quote): "프로젝트를 끝냈다."
+            - Good (Gardener): "치열했던 노력 끝에 마침내 결실을 맺으셨군요."
+            
+            - Input: "I helped my friend."
+            - Good (Gardener): "친구에게 건넨 따뜻한 손길이 정원에도 온기를 더했습니다."
+
+            [LOGIC RULES]
+            1. **Diversity:** Do NOT select two messages from the SAME diary entry. Pick different dates.
+            2. **Flow:** Place the earlier date first.
+            3. **Extraction:** You MUST allow the JSON to carry the exact [Date] of the original entry.
 
             [Task 2: Persona Summary]
             - Define "Who the user was this month" in **3 distinct lines** (Korean).
-            - Line 1: A metaphor (e.g., "거친 파도를 헤쳐나온 항해사였습니다.")
-            - Line 2: Main emotional achievement (e.g., "두려움 속에서도 결국 답을 찾으셨군요.")
-            - Line 3: Closing encouragement (e.g., "당신의 땀방울이 단단한 뿌리가 되었습니다.")
-            - Tone: Deep, emotional, and poetic.
+            - Line 1: Metaphor (e.g., "거친 파도를 헤쳐나온 항해사")
+            - Line 2: Emotional Achievement
+            - Line 3: Closing Encouragement
 
             [Output Format - Strictly JSON]
             {
                 "quotes": {
-                    "courage": [ { "text": "...", "date": "YYYY-MM-DD" }, ... ],
+                    "courage": [ { "text": "Gardener's Message 1", "date": "YYYY-MM-DD" }, ... ],
                     "wisdom": [ ... ],
                     "kindness": [ ... ],
                     "diligence": [ ... ],
                     "serenity": [ ... ]
                 },
-                "persona_3_lines": [
-                    "Line 1 text",
-                    "Line 2 text",
-                    "Line 3 text"
-                ]
+                "persona_3_lines": [ "Line 1", "Line 2", "Line 3" ]
             }
         `;
 
@@ -156,10 +162,10 @@ app.post('/monthly-summary', async (req, res) => {
                 model: "gpt-4o-mini", 
                 messages: [
                     { role: "system", content: systemPrompt },
-                    { role: "user", content: `Analyze my month based on these diaries:\n${contentToSend}` }
+                    { role: "user", content: `Here are my diaries:\n${contentToSend}` }
                 ],
                 response_format: { type: "json_object" },
-                temperature: 0.6 // 창의성(0.7)과 논리(0.5)의 균형점
+                temperature: 0.7 // 창의성을 위해 0.7로 설정 (말투 변환을 위해 필요)
             })
         });
 
@@ -168,14 +174,13 @@ app.post('/monthly-summary', async (req, res) => {
 
         const aiResult = JSON.parse(data.choices[0].message.content);
         
-        // 3. 최종 병합
         const finalResponse = {
-            quotes: aiResult.quotes,
+            quotes: aiResult.quotes, // 이름은 quotes지만 내용은 정원사의 멘트가 됨
             persona: aiResult.persona_3_lines,
             stats: monthlyTotal
         };
         
-        console.log("✅ 월간 회고 생성 완료 (품질 보증: 다양성/순서/통계/3줄요약)");
+        console.log("✅ 월간 회고 생성 완료 (정원사 말투 적용됨)");
         res.json(finalResponse);
 
     } catch (error) {
