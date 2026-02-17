@@ -7,13 +7,13 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-app.use(express.json({ limit: '10mb' })); // 일기 데이터가 많을 수 있으니 용량 제한 늘림
+app.use(express.json({ limit: '10mb' })); // 용량 제한 넉넉하게
 
 app.get('/', (req, res) => {
-    res.send('🌿 글숲 정원 관리 서버 가동 중 (Render)');
+    res.send('🌿 글숲 정원 관리 서버 가동 중 (Updated for Dates)');
 });
 
-// [기존] 일기 분석 API
+// [기존 유지] 일기 분석 API (여기는 바꿀 필요 없음)
 app.post('/analyze', async (req, res) => {
     const { diaryText } = req.body;
 
@@ -24,7 +24,6 @@ app.post('/analyze', async (req, res) => {
     console.log("📨 정원사가 편지를 받았습니다. 분석 시작...");
 
     try {
-        // [여기가 핵심] 프론트엔드에 있던 프롬프트를 서버로 가져옴
         const systemPrompt = `
             You are the "Master Gardener of Souls," a wise and philosophical AI guide who nurtures a virtual garden based on human emotions and reflections. 
             Analyze the user's diary entry and transform it into growth data for their garden.
@@ -80,6 +79,7 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
+// [대폭 수정됨] 월간 회고 API (날짜 포함 반환)
 app.post('/monthly-summary', async (req, res) => {
     const { diaries } = req.body; // 프론트에서 보낸 일기 배열
 
@@ -90,32 +90,46 @@ app.post('/monthly-summary', async (req, res) => {
     console.log(`📅 월간 회고 요청: 총 ${diaries.length}개의 일기 분석 중...`);
 
     try {
+        // 1. AI에게 보낼 데이터 가공: "날짜" 정보를 텍스트와 함께 묶어서 보냅니다.
+        const formattedDiaries = diaries.map(d => {
+            // date_str이 있으면 쓰고, 없으면 알 수 없음 처리
+            const dateLabel = d.date_str || "Unknown Date";
+            return `[Date: ${dateLabel}]\n${d.content}`;
+        }).join("\n\n=================\n\n");
+
         const systemPrompt = `
             You are the "Chronicler of the Soul." 
-            The user provides a list of diary entries from the past month.
+            The user provides a list of diary entries from the past month. Each entry is marked with a [Date].
+            
             Your task is to select the **most impactful, poetic, or meaningful 2 sentences** for EACH virtue category (Courage, Wisdom, Kindness, Diligence, Serenity).
             
-            [Input Format]
-            Array of strings (diaries).
+            [CRITICAL REQUIREMENT]
+            For each selected quote, you MUST extract the **Date** associated with that specific diary entry.
 
             [Selection Logic]
             - Look for sentences that best represent each virtue.
-            - If there are no specific diaries for a virtue, pick general inspiring sentences from the text.
-            - The selected sentences must be in **Korean**.
+            - If there are no specific diaries for a virtue, pick general inspiring sentences from the text and use the date of that entry.
+            - The selected text must be in **Korean**.
             - Make them sound like a "Typographic Quote". Short, punchy, and emotional.
 
-            [Output Format - JSON Only]
+            [Output Format - Strictly JSON]
+            The output must be an object where each virtue has an array of objects containing "text" and "date".
+            
+            Example:
             {
-                "courage": ["Quote 1", "Quote 2"],
-                "wisdom": ["Quote 1", "Quote 2"],
-                "kindness": ["Quote 1", "Quote 2"],
-                "diligence": ["Quote 1", "Quote 2"],
-                "serenity": ["Quote 1", "Quote 2"]
+                "courage": [
+                    { "text": "두려움 속에서도 한 걸음을 내딛었다.", "date": "2024-05-21" },
+                    { "text": "떨리는 목소리도 나의 일부임을 인정했다.", "date": "2024-05-25" }
+                ],
+                "wisdom": [ ... ],
+                "kindness": [ ... ],
+                "diligence": [ ... ],
+                "serenity": [ ... ]
             }
         `;
 
-        // 일기 내용만 합쳐서 보냄 (너무 길면 자름)
-        const combinedDiaries = diaries.map(d => d.content).join("\n\n").substring(0, 15000);
+        // 텍스트 길이 제한 (토큰 절약 및 에러 방지)
+        const contentToSend = formattedDiaries.substring(0, 20000); 
 
         const response = await fetch("https://api.openai.com/v1/chat/completions", {
             method: "POST",
@@ -124,10 +138,10 @@ app.post('/monthly-summary', async (req, res) => {
                 "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
             },
             body: JSON.stringify({
-                model: "gpt-4o-mini",
+                model: "gpt-4o-mini", // 혹은 gpt-3.5-turbo (비용 절감 시)
                 messages: [
                     { role: "system", content: systemPrompt },
-                    { role: "user", content: `Here are my diaries:\n${combinedDiaries}` }
+                    { role: "user", content: `Here are my diaries with dates:\n${contentToSend}` }
                 ],
                 response_format: { type: "json_object" },
                 temperature: 0.7
@@ -138,6 +152,8 @@ app.post('/monthly-summary', async (req, res) => {
         if (data.error) throw new Error(data.error.message);
 
         const result = JSON.parse(data.choices[0].message.content);
+        
+        console.log("✅ 월간 회고 생성 완료 (날짜 포함)");
         res.json(result);
 
     } catch (error) {
