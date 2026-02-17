@@ -79,9 +79,9 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// [대폭 수정됨] 월간 회고 API (날짜 포함 반환)
+// [수정됨] 월간 회고 API (날짜 포함 반환)
 app.post('/monthly-summary', async (req, res) => {
-    const { diaries } = req.body; // 프론트에서 보낸 일기 배열
+    const { diaries } = req.body; 
 
     if (!diaries || diaries.length === 0) {
         return res.status(400).json({ error: '분석할 일기가 없습니다.' });
@@ -90,32 +90,26 @@ app.post('/monthly-summary', async (req, res) => {
     console.log(`📅 월간 회고 요청: 총 ${diaries.length}개의 일기 분석 중...`);
 
     try {
-        // 1. AI에게 보낼 데이터 가공: "날짜" 정보를 텍스트와 함께 묶어서 보냅니다.
+        // 1. [핵심] AI에게 보낼 데이터 가공: "날짜" 정보를 텍스트와 함께 묶어서 보냅니다.
+        // 예: "[Date: 2024-05-21] 오늘은 힘든 하루였다..."
         const formattedDiaries = diaries.map(d => {
-            // date_str이 있으면 쓰고, 없으면 알 수 없음 처리
-            const dateLabel = d.date_str || "Unknown Date";
+            const dateLabel = d.date_str || "Unknown Date"; 
             return `[Date: ${dateLabel}]\n${d.content}`;
         }).join("\n\n=================\n\n");
 
         const systemPrompt = `
             You are the "Chronicler of the Soul." 
-            The user provides a list of diary entries from the past month. Each entry is marked with a [Date].
+            The user provides a list of diary entries from the past month. Each entry starts with a [Date].
             
             Your task is to select the **most impactful, poetic, or meaningful 2 sentences** for EACH virtue category (Courage, Wisdom, Kindness, Diligence, Serenity).
             
             [CRITICAL REQUIREMENT]
-            For each selected quote, you MUST extract the **Date** associated with that specific diary entry.
-
-            [Selection Logic]
-            - Look for sentences that best represent each virtue.
-            - If there are no specific diaries for a virtue, pick general inspiring sentences from the text and use the date of that entry.
-            - The selected text must be in **Korean**.
-            - Make them sound like a "Typographic Quote". Short, punchy, and emotional.
+            For each selected quote, you MUST extract the **exact Date** associated with that specific diary entry.
 
             [Output Format - Strictly JSON]
             The output must be an object where each virtue has an array of objects containing "text" and "date".
             
-            Example:
+            Example JSON Structure:
             {
                 "courage": [
                     { "text": "두려움 속에서도 한 걸음을 내딛었다.", "date": "2024-05-21" },
@@ -129,7 +123,7 @@ app.post('/monthly-summary', async (req, res) => {
         `;
 
         // 텍스트 길이 제한 (토큰 절약 및 에러 방지)
-        const contentToSend = formattedDiaries.substring(0, 20000); 
+        const contentToSend = formattedDiaries.substring(0, 25000); 
 
         const response = await fetch("https://api.openai.com/v1/chat/completions", {
             method: "POST",
@@ -138,7 +132,7 @@ app.post('/monthly-summary', async (req, res) => {
                 "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
             },
             body: JSON.stringify({
-                model: "gpt-4o-mini", // 혹은 gpt-3.5-turbo (비용 절감 시)
+                model: "gpt-4o-mini", 
                 messages: [
                     { role: "system", content: systemPrompt },
                     { role: "user", content: `Here are my diaries with dates:\n${contentToSend}` }
