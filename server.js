@@ -78,8 +78,7 @@ app.post('/analyze', async (req, res) => {
         res.status(500).json({ error: "정원사가 잠시 자리를 비웠습니다." });
     }
 });
-
-// [품질 개선] 월간 회고 API (다양성 및 맥락 강화)
+// [감성 강화] 월간 회고 API (정원사의 스토리텔링 모드)
 app.post('/monthly-summary', async (req, res) => {
     const { diaries } = req.body; 
 
@@ -94,41 +93,43 @@ app.post('/monthly-summary', async (req, res) => {
         const formattedDiaries = diaries.map(d => {
             const dateLabel = d.date_str || "Unknown Date"; 
             return `[Date: ${dateLabel}] ${d.content}`;
-        }).join("\n\n"); // 구분자 간소화하여 토큰 절약
+        }).join("\n\n"); 
 
         const systemPrompt = `
-            You are the "Chronicler of the Soul." 
-            The user provides a list of diary entries from the past month.
+            You are the "Master Gardener of the Soul," a warm and observant narrator.
+            The user provides diary entries from the past month.
             
-            Your task is to select the **2 most impactful sentences** for EACH virtue category (Courage, Wisdom, Kindness, Diligence, Serenity).
+            Your task is to create **2 short summary sentences** for EACH virtue category (Courage, Wisdom, Kindness, Diligence, Serenity).
 
-            [CRITICAL RULES FOR SELECTION - READ CAREFULLY]
-            1. **DIVERSITY IS KEY:** - Do **NOT** select two sentences from the SAME diary entry unless absolutely necessary.
-               - You **MUST** prioritize selecting quotes from **DIFFERENT DATES** to show the flow of the month.
+            [KEY CHANGE: NARRATIVE STYLE]
+            - Do NOT just copy the diary text.
+            - **REWRITE** the content as if you are a gentle gardener speaking to the user.
+            - Use a **warm, polite, spoken Korean style** (e.g., "~하셨군요.", "~했던 날이었죠.", "~보였어요.").
+            - Focus on the user's **actions** and **feelings**.
+
+            [Examples]
+            - Diary: "I studied coding all day and it was hard."
+            -> Gardener: "종일 코딩에 매진하며 땀 흘리셨던 날이네요." (O)
+            -> Gardener: "코딩 공부를 했다." (X - Too dry)
             
-            2. **NO SPLITTING:** - **NEVER** split a single sentence into two parts to make the count.
-               - Select two distinct, complete sentences.
+            - Diary: "I helped a friend and felt good."
+            -> Gardener: "친구에게 건넨 손길이 당신에게도 기쁨이 되었군요." (O)
 
-            3. **CONTEXTUAL FLOW:**
-               - The selected quotes should tell a story. 
-               - Ideally: Quote 1 (Earlier Date / Action) -> Quote 2 (Later Date / Realization).
-
-            4. **FORMATTING:**
-               - The selected text must be in **Korean**.
-               - Extract the **exact Date** associated with that entry.
-               - If the sentence is too long (> 50 chars), condense it into a poetic quote.
+            [Constraints]
+            1. **Diversity:** Prioritize selecting events from **DIFFERENT DATES**.
+            2. **Length:** Keep each sentence **under 50 characters** for UI beauty.
+            3. **Date Extraction:** You MUST extract the exact date of the diary entry used.
 
             [Output Format - Strictly JSON]
             {
                 "courage": [
-                    { "text": "Quote form early in the month", "date": "YYYY-MM-DD" },
-                    { "text": "Quote from later in the month", "date": "YYYY-MM-DD" }
+                    { "text": "Gardener's voice sentence 1", "date": "YYYY-MM-DD" },
+                    { "text": "Gardener's voice sentence 2", "date": "YYYY-MM-DD" }
                 ],
                 ... (repeat for other virtues)
             }
         `;
 
-        // 토큰 제한 (데이터가 많으니 30000자 정도로 넉넉히)
         const contentToSend = formattedDiaries.substring(0, 30000); 
 
         const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -141,10 +142,10 @@ app.post('/monthly-summary', async (req, res) => {
                 model: "gpt-4o-mini", 
                 messages: [
                     { role: "system", content: systemPrompt },
-                    { role: "user", content: `Analyze these diaries and extract quotes based on the diversity rules:\n${contentToSend}` }
+                    { role: "user", content: `Please narrate my month based on these diaries:\n${contentToSend}` }
                 ],
                 response_format: { type: "json_object" },
-                temperature: 0.5 // 논리력을 위해 0.5 유지
+                temperature: 0.7 // 감성적인 표현을 위해 창의성을 약간 높임 (0.7)
             })
         });
 
@@ -153,7 +154,7 @@ app.post('/monthly-summary', async (req, res) => {
 
         const result = JSON.parse(data.choices[0].message.content);
         
-        console.log("✅ 월간 회고 생성 완료 (다양성 확보)");
+        console.log("✅ 월간 회고 생성 완료 (정원사 모드)");
         res.json(result);
 
     } catch (error) {
