@@ -79,7 +79,7 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// [엄격한 요약 모드] 월간 회고 API
+// [품질 개선] 월간 회고 API (다양성 및 맥락 강화)
 app.post('/monthly-summary', async (req, res) => {
     const { diaries } = req.body; 
 
@@ -90,36 +90,46 @@ app.post('/monthly-summary', async (req, res) => {
     console.log(`📅 월간 회고 요청: 총 ${diaries.length}개의 일기 분석 중...`);
 
     try {
+        // 1. 데이터 가공
         const formattedDiaries = diaries.map(d => {
             const dateLabel = d.date_str || "Unknown Date"; 
-            return `[Date: ${dateLabel}]\n${d.content}`;
-        }).join("\n\n=================\n\n");
+            return `[Date: ${dateLabel}] ${d.content}`;
+        }).join("\n\n"); // 구분자 간소화하여 토큰 절약
 
         const systemPrompt = `
             You are the "Chronicler of the Soul." 
-            The user provides a list of diary entries.
+            The user provides a list of diary entries from the past month.
             
-            Your task is to **EXTRACT** the most impactful **short quote (1 sentence)** for EACH virtue category.
+            Your task is to select the **2 most impactful sentences** for EACH virtue category (Courage, Wisdom, Kindness, Diligence, Serenity).
+
+            [CRITICAL RULES FOR SELECTION - READ CAREFULLY]
+            1. **DIVERSITY IS KEY:** - Do **NOT** select two sentences from the SAME diary entry unless absolutely necessary.
+               - You **MUST** prioritize selecting quotes from **DIFFERENT DATES** to show the flow of the month.
             
-            [STRICT CONSTRAINTS - DO NOT IGNORE]
-            1. **NEVER return the full diary entry.** You must select only ONE specific sentence.
-            2. **Length Limit:** The selected text MUST be **under 60 characters** (Korean).
-            3. **Formatting:** If the sentence is too long, summarize it into a short, poetic quote.
-            4. **Ordering:** - If two quotes are selected, place the chronologically earlier one first.
-               - Ensure a logical flow (Action -> Realization).
+            2. **NO SPLITTING:** - **NEVER** split a single sentence into two parts to make the count.
+               - Select two distinct, complete sentences.
+
+            3. **CONTEXTUAL FLOW:**
+               - The selected quotes should tell a story. 
+               - Ideally: Quote 1 (Earlier Date / Action) -> Quote 2 (Later Date / Realization).
+
+            4. **FORMATTING:**
+               - The selected text must be in **Korean**.
+               - Extract the **exact Date** associated with that entry.
+               - If the sentence is too long (> 50 chars), condense it into a poetic quote.
 
             [Output Format - Strictly JSON]
             {
                 "courage": [
-                    { "text": "짧고 강렬한 한 문장", "date": "YYYY-MM-DD" },
-                    { "text": "또 다른 짧은 문장", "date": "YYYY-MM-DD" }
+                    { "text": "Quote form early in the month", "date": "YYYY-MM-DD" },
+                    { "text": "Quote from later in the month", "date": "YYYY-MM-DD" }
                 ],
-                ... (wisdom, kindness, diligence, serenity)
+                ... (repeat for other virtues)
             }
         `;
 
-        // 너무 긴 경우를 대비해 길이 제한은 유지
-        const contentToSend = formattedDiaries.substring(0, 25000); 
+        // 토큰 제한 (데이터가 많으니 30000자 정도로 넉넉히)
+        const contentToSend = formattedDiaries.substring(0, 30000); 
 
         const response = await fetch("https://api.openai.com/v1/chat/completions", {
             method: "POST",
@@ -131,10 +141,10 @@ app.post('/monthly-summary', async (req, res) => {
                 model: "gpt-4o-mini", 
                 messages: [
                     { role: "system", content: systemPrompt },
-                    { role: "user", content: `Extract short quotes from these diaries:\n${contentToSend}` }
+                    { role: "user", content: `Analyze these diaries and extract quotes based on the diversity rules:\n${contentToSend}` }
                 ],
                 response_format: { type: "json_object" },
-                temperature: 0.4 // 창의성을 좀 더 낮춰서(0.4) 지시를 칼같이 지키게 함
+                temperature: 0.5 // 논리력을 위해 0.5 유지
             })
         });
 
@@ -142,6 +152,8 @@ app.post('/monthly-summary', async (req, res) => {
         if (data.error) throw new Error(data.error.message);
 
         const result = JSON.parse(data.choices[0].message.content);
+        
+        console.log("✅ 월간 회고 생성 완료 (다양성 확보)");
         res.json(result);
 
     } catch (error) {
