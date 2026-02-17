@@ -78,7 +78,6 @@ app.post('/analyze', async (req, res) => {
         res.status(500).json({ error: "정원사가 잠시 자리를 비웠습니다." });
     }
 });
-// [감성 강화] 월간 회고 API (정원사의 스토리텔링 모드)
 app.post('/monthly-summary', async (req, res) => {
     const { diaries } = req.body; 
 
@@ -89,44 +88,54 @@ app.post('/monthly-summary', async (req, res) => {
     console.log(`📅 월간 회고 요청: 총 ${diaries.length}개의 일기 분석 중...`);
 
     try {
-        // 1. 데이터 가공
+        // 1. [직접 계산] 이번 달 획득한 총 스탯 계산 (AI 아님)
+        let monthlyTotal = { courage: 0, wisdom: 0, kindness: 0, diligence: 0, serenity: 0 };
+        
+        diaries.forEach(d => {
+            if (d.stat_increase) {
+                for (const [key, val] of Object.entries(d.stat_increase)) {
+                    if (monthlyTotal[key] !== undefined) {
+                        monthlyTotal[key] += val;
+                    }
+                }
+            }
+        });
+
+        // 2. AI에게 보낼 데이터 가공
         const formattedDiaries = diaries.map(d => {
             const dateLabel = d.date_str || "Unknown Date"; 
             return `[Date: ${dateLabel}] ${d.content}`;
         }).join("\n\n"); 
 
         const systemPrompt = `
-            You are the "Master Gardener of the Soul," a warm and observant narrator.
-            The user provides diary entries from the past month.
+            You are the "Master Gardener of the Soul."
             
-            Your task is to create **2 short summary sentences** for EACH virtue category (Courage, Wisdom, Kindness, Diligence, Serenity).
+            [Task 1: Summary Quotes]
+            - Create **2 short summary sentences** for EACH virtue (Courage, Wisdom, Kindness, Diligence, Serenity).
+            - **REWRITE** the content as a warm, polite gardener speaking to the user (Korean).
+            - Extract the exact date.
 
-            [KEY CHANGE: NARRATIVE STYLE]
-            - Do NOT just copy the diary text.
-            - **REWRITE** the content as if you are a gentle gardener speaking to the user.
-            - Use a **warm, polite, spoken Korean style** (e.g., "~하셨군요.", "~했던 날이었죠.", "~보였어요.").
-            - Focus on the user's **actions** and **feelings**.
-
-            [Examples]
-            - Diary: "I studied coding all day and it was hard."
-            -> Gardener: "종일 코딩에 매진하며 땀 흘리셨던 날이네요." (O)
-            -> Gardener: "코딩 공부를 했다." (X - Too dry)
-            
-            - Diary: "I helped a friend and felt good."
-            -> Gardener: "친구에게 건넨 손길이 당신에게도 기쁨이 되었군요." (O)
-
-            [Constraints]
-            1. **Diversity:** Prioritize selecting events from **DIFFERENT DATES**.
-            2. **Length:** Keep each sentence **under 50 characters** for UI beauty.
-            3. **Date Extraction:** You MUST extract the exact date of the diary entry used.
+            [Task 2: Persona Summary (NEW)]
+            - Based on the diaries, define "Who the user was this month" in **3 distinct lines**.
+            - Line 1: A metaphor for their month (e.g., "거친 파도를 헤쳐나온 항해사였습니다.")
+            - Line 2: Their main emotional achievement (e.g., "두려움 속에서도 결국 답을 찾아내셨군요.")
+            - Line 3: A warm closing encouragement (e.g., "당신의 땀방울이 단단한 뿌리가 되었습니다.")
+            - Tone: Deep, emotional, and poetic.
 
             [Output Format - Strictly JSON]
             {
-                "courage": [
-                    { "text": "Gardener's voice sentence 1", "date": "YYYY-MM-DD" },
-                    { "text": "Gardener's voice sentence 2", "date": "YYYY-MM-DD" }
-                ],
-                ... (repeat for other virtues)
+                "quotes": {
+                    "courage": [ { "text": "...", "date": "..." }, ... ],
+                    "wisdom": ..., 
+                    "kindness": ..., 
+                    "diligence": ..., 
+                    "serenity": ...
+                },
+                "persona_3_lines": [
+                    "Line 1 text",
+                    "Line 2 text",
+                    "Line 3 text"
+                ]
             }
         `;
 
@@ -142,20 +151,27 @@ app.post('/monthly-summary', async (req, res) => {
                 model: "gpt-4o-mini", 
                 messages: [
                     { role: "system", content: systemPrompt },
-                    { role: "user", content: `Please narrate my month based on these diaries:\n${contentToSend}` }
+                    { role: "user", content: `Analyze my month:\n${contentToSend}` }
                 ],
                 response_format: { type: "json_object" },
-                temperature: 0.7 // 감성적인 표현을 위해 창의성을 약간 높임 (0.7)
+                temperature: 0.7 
             })
         });
 
         const data = await response.json();
         if (data.error) throw new Error(data.error.message);
 
-        const result = JSON.parse(data.choices[0].message.content);
+        const aiResult = JSON.parse(data.choices[0].message.content);
         
-        console.log("✅ 월간 회고 생성 완료 (정원사 모드)");
-        res.json(result);
+        // 3. AI 결과 + 직접 계산한 통계를 합쳐서 응답
+        const finalResponse = {
+            quotes: aiResult.quotes,
+            persona: aiResult.persona_3_lines,
+            stats: monthlyTotal
+        };
+        
+        console.log("✅ 월간 회고 생성 완료 (통계 및 3줄 요약 포함)");
+        res.json(finalResponse);
 
     } catch (error) {
         console.error("❌ 월간 분석 에러:", error);
