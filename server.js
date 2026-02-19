@@ -10,19 +10,21 @@ const PORT = process.env.PORT || 3000;
 const allowedOrigins = [
     'http://127.0.0.1:5500', 
     'http://localhost:3000', 
-    'https://yoonho-github.github.io' // ★여기에 나중에 배포할 글숲 주소 입력!
+    'https://alltoy24.github.io' // ★ yoonho-github 대신 실제 주소인 alltoy24로 변경!
 ];
-
 app.use(cors({
     origin: function(origin, callback) {
-        // 출처가 없거나(서버 자체 요청), 허락된 리스트에 있으면 통과!
+        // 로컬 테스트(origin 없음)나 리스트에 있는 주소면 통과
         if (!origin || allowedOrigins.indexOf(origin) !== -1) {
             callback(null, true);
         } else {
-            // 허락되지 않은 이상한 사이트에서 오면 차단!
-            callback(new Error('허용되지 않은 접근입니다. (CORS Blocked)'));
+            // 에러 메시지에 현재 요청을 보낸 실제 origin을 찍어서 확인하기 좋게 수정
+            console.log("❌ 차단된 요청 Origin:", origin); 
+            callback(new Error('CORS 정책에 의해 차단되었습니다.'));
         }
-    }
+    },
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 app.use(express.json({ limit: '10mb' }));
