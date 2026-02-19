@@ -6,15 +6,44 @@ const fetch = require('node-fetch');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
-app.use(express.json({ limit: '10mb' })); // 용량 제한 넉넉하게
+const allowedOrigins = [
+    'http://127.0.0.1:5500', 
+    'http://localhost:3000', 
+    'https://yoonho-github.github.io' // ★여기에 나중에 배포할 글숲 주소 입력!
+];
+
+app.use(cors({
+    origin: function(origin, callback) {
+        // 출처가 없거나(서버 자체 요청), 허락된 리스트에 있으면 통과!
+        if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            // 허락되지 않은 이상한 사이트에서 오면 차단!
+            callback(new Error('허용되지 않은 접근입니다. (CORS Blocked)'));
+        }
+    }
+}));
+
+app.use(express.json({ limit: '10mb' }));
+
+const analyzeLimiter = rateLimit({
+    windowMs: 24 * 60 * 60 * 1000, // 24시간
+    max: 10, 
+    message: { error: '오늘 정원사가 너무 많은 편지를 받았습니다. 내일 다시 찾아와주세요.' }
+});
+
+// 월간 회고는 AI 토큰을 많이 먹으므로 하루 5번으로 더 빡빡하게 제한!
+const summaryLimiter = rateLimit({
+    windowMs: 24 * 60 * 60 * 1000, // 24시간
+    max: 5, 
+    message: { error: '월간 회고 요청 한도를 초과했습니다. 내일 다시 시도해주세요.' }
+});
 
 app.get('/', (req, res) => {
     res.send('🌿 글숲 정원 관리 서버 가동 중 (Updated for Dates)');
 });
 
-// [기존 유지] 일기 분석 API (여기는 바꿀 필요 없음)
-app.post('/analyze', async (req, res) => {
+app.post('/analyze', analyzeLimiter, async (req, res) => {
     const { diaryText } = req.body;
 
     if (!diaryText) {
@@ -79,8 +108,8 @@ app.post('/analyze', async (req, res) => {
     }
 });
 
-// [최종_진짜_최종] 월간 회고 API (정원사 말투 + 다양성 + 순서 + 통계)
-app.post('/monthly-summary', async (req, res) => {
+// [적용] 여기도 'summaryLimiter' 장착!
+app.post('/monthly-summary', summaryLimiter, async (req, res) => {
     const { diaries } = req.body; 
 
     if (!diaries || diaries.length === 0) {
@@ -90,7 +119,6 @@ app.post('/monthly-summary', async (req, res) => {
     console.log(`📅 월간 회고 요청: 총 ${diaries.length}개의 일기 분석 중...`);
 
     try {
-        // 1. [직접 계산] 스탯 통계
         let monthlyTotal = { courage: 0, wisdom: 0, kindness: 0, diligence: 0, serenity: 0 };
         
         diaries.forEach(d => {
@@ -103,7 +131,6 @@ app.post('/monthly-summary', async (req, res) => {
             }
         });
 
-        // 2. AI 데이터 가공
         const formattedDiaries = diaries.map(d => {
             const dateLabel = d.date_str || "Unknown Date"; 
             return `[Date: ${dateLabel}] ${d.content}`;
@@ -165,7 +192,7 @@ app.post('/monthly-summary', async (req, res) => {
                     { role: "user", content: `Here are my diaries:\n${contentToSend}` }
                 ],
                 response_format: { type: "json_object" },
-                temperature: 0.7 // 창의성을 위해 0.7로 설정 (말투 변환을 위해 필요)
+                temperature: 0.7 
             })
         });
 
@@ -175,7 +202,7 @@ app.post('/monthly-summary', async (req, res) => {
         const aiResult = JSON.parse(data.choices[0].message.content);
         
         const finalResponse = {
-            quotes: aiResult.quotes, // 이름은 quotes지만 내용은 정원사의 멘트가 됨
+            quotes: aiResult.quotes, 
             persona: aiResult.persona_3_lines,
             stats: monthlyTotal
         };
