@@ -29,6 +29,61 @@ app.use(cors({
 
 app.use(express.json({ limit: '10mb' }));
 
+// server.js 최상단 부근에 선언
+let cachedQuote = {
+    date: "",
+    text: "오늘도 당신의 정원에 평안이 깃들기를." // 기본값 (API 에러 대비)
+};
+
+// 덕담 생성 함수
+async function getDailyQuote() {
+    // 한국 시간 기준으로 오늘 날짜 구하기 (YYYY-MM-DD)
+    const today = new Date().toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' });
+
+    // 이미 오늘 덕담을 받아왔다면 바로 캐시된 텍스트 반환 (API 호출 X)
+    if (cachedQuote.date === today) {
+        return cachedQuote.text;
+    }
+
+    try {
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${process.env.OPENAI_API_KEY}` // 환경변수 사용
+            },
+            body: JSON.stringify({
+                model: "gpt-4o-mini", // 비용 효율적인 모델
+                messages: [
+                    { 
+                        role: "system", 
+                        content: "당신은 몽환적이고 신비로운 '글숲'의 정원사입니다. 방문객에게 위로와 평온을 주는 시적이고 우아한 덕담을 딱 한 줄로 작성해주세요. 너무 길지 않게, 따뜻한 톤으로 작성하세요." 
+                    }
+                ],
+                temperature: 0.7
+            })
+        });
+
+        const data = await response.json();
+        const quote = data.choices[0].message.content.trim();
+        
+        // 캐시 업데이트
+        cachedQuote.text = quote;
+        cachedQuote.date = today;
+        return quote;
+
+    } catch (error) {
+        console.error("덕담 생성 실패:", error);
+        return cachedQuote.text; // 실패 시 기존 덕담 유지
+    }
+}
+
+// 프론트에서 호출할 API 엔드포인트 만들기
+app.get('/api/daily-quote', async (req, res) => {
+    const quote = await getDailyQuote();
+    res.json({ quote: quote });
+});
+
 const analyzeLimiter = rateLimit({
     windowMs: 24 * 60 * 60 * 1000, // 24시간
     max: 10, 
