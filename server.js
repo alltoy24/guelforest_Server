@@ -29,65 +29,101 @@ app.use(cors({
 
 app.use(express.json({ limit: '10mb' }));
 
-// server.js 최상단 부근에 선언
 let cachedQuote = {
     date: "",
-    text: "오늘도 당신의 정원에 평안이 깃들기를." // 기본값 (API 에러 대비)
+    texts: ["오늘도 당신의 정원에 평안이 깃들기를."] 
 };
 
-// 덕담 생성 함수
-async function getDailyQuote() {
-    // 한국 시간 기준으로 오늘 날짜 구하기 (YYYY-MM-DD)
-    const today = new Date().toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' });
+// 🌿 5개의 감성 덕담 일괄 생성기
+async function getDailyQuotes() {
+    const now = new Date(new Date().toLocaleString("en-US", {timeZone: "Asia/Seoul"}));
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1;
+    const date = now.getDate();
+    const days = ['일', '월', '화', '수', '목', '금', '토'];
+    const dayOfWeek = days[now.getDay()];
+    
+    const todayStr = `${year}-${month}-${date}`;
 
-    // 이미 오늘 덕담을 받아왔다면 바로 캐시된 텍스트 반환 (API 호출 X)
-    if (cachedQuote.date === today) {
-        return cachedQuote.text;
+    // 이미 오늘자 덕담 5개를 만들었다면 통과
+    if (cachedQuote.date === todayStr && cachedQuote.texts.length > 1) {
+        return;
     }
+
+    let specialEvent = "";
+    if (month === 1 && date === 1) specialEvent = "새해 첫날";
+    else if (month === 2 && date === 17) specialEvent = "설날"; 
+    else if (month === 9 && date === 25) specialEvent = "추석"; 
+    else if (month === 12 && date === 25) specialEvent = "크리스마스";
+    else if (month === 12 && date === 31) specialEvent = "한 해의 마지막 날";
+
+    let contextMessage = `오늘은 ${year}년 ${month}월 ${date}일, ${dayOfWeek}요일입니다. `;
+    if (specialEvent) {
+        contextMessage += `오늘은 특별한 날인 '${specialEvent}'입니다. 이 날이 주는 고유한 분위기를 담아주세요.`;
+    } else {
+        contextMessage += `${dayOfWeek}요일이 주는 감성을 담아주세요.`;
+    }
+
+    const systemPrompt = `
+        당신은 몽환적이고 신비로운 '글숲'의 정원사입니다.
+        방문객의 마음에 위로와 평온을 주는 시적이고 우아한 덕담을 작성해야 합니다.
+        
+        [상황]
+        ${contextMessage}
+        
+        [절대 지켜야 할 규칙]
+        1. 너무 노골적으로 날짜나 요일을 언급하지 마세요.
+        2. 은유적이고 자연스럽게 분위기만 녹여내세요.
+        3. 이모지는 쓰지 마세요.
+        
+        [출력 형식 - 중요!]
+        위 규칙을 지키는 '서로 다른 내용의 덕담 5개'를 작성해주세요.
+        반드시 각 문장은 줄바꿈(엔터)으로만 구분해야 하며, 문장 앞에 번호(1. 2. 등)나 기호(-, *)를 절대 붙이지 마세요.
+    `;
 
     try {
         const response = await fetch("https://api.openai.com/v1/chat/completions", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                "Authorization": `Bearer ${process.env.OPENAI_API_KEY}` // 환경변수 사용
+                "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
             },
             body: JSON.stringify({
-                model: "gpt-4o-mini", // 비용 효율적인 모델
-                messages: [
-                    { 
-                        role: "system", 
-                        content: "당신은 몽환적이고 신비로운 '글숲'의 정원사입니다. 방문객에게 위로와 평온을 주는 시적이고 우아한 덕담을 딱 한 줄로 작성해주세요. 너무 길지 않게, 따뜻한 톤으로 작성하세요." 
-                    }
-                ],
-                temperature: 0.7
+                model: "gpt-4o-mini",
+                messages: [{ role: "system", content: systemPrompt }],
+                temperature: 0.8
             })
         });
 
         const data = await response.json();
-        const quote = data.choices[0].message.content.trim();
+        const content = data.choices[0].message.content.trim();
         
-        // 캐시 업데이트
-        cachedQuote.text = quote;
-        cachedQuote.date = today;
-        return quote;
+        // AI가 준 텍스트를 줄바꿈 기준으로 잘라서 배열로 만듦
+        let quotesArray = content.split('\n').map(q => q.trim()).filter(q => q.length > 0);
+        
+        // 혹시 AI가 말 안 듣고 앞에 "1. " 같은 걸 붙였을까봐 정규식으로 청소
+        quotesArray = quotesArray.map(q => q.replace(/^[\d\-\.\*\s]+/, ''));
+        
+        if (quotesArray.length > 0) {
+            cachedQuote.texts = quotesArray;
+            cachedQuote.date = todayStr;
+        }
 
     } catch (error) {
         console.error("덕담 생성 실패:", error);
-        return cachedQuote.text; // 실패 시 기존 덕담 유지
     }
 }
 
-// 프론트에서 호출할 API 엔드포인트 만들기
+// 🌿 프론트에서 호출할 API 엔드포인트
 app.get('/api/daily-quote', async (req, res) => {
-    const quote = await getDailyQuote();
-    res.json({ quote: quote });
-});
-
-const analyzeLimiter = rateLimit({
-    windowMs: 24 * 60 * 60 * 1000, // 24시간
-    max: 10, 
-    message: { error: '오늘 정원사가 너무 많은 편지를 받았습니다. 내일 다시 찾아와주세요.' }
+    // 혹시 캐시가 비어있거나 날이 바뀌었으면 업데이트 수행
+    await getDailyQuotes(); 
+    
+    // 5개의 명언 중 랜덤으로 1개를 뽑음
+    const quotes = cachedQuote.texts;
+    const randomQuote = quotes[Math.floor(Math.random() * quotes.length)];
+    
+    res.json({ quote: randomQuote });
 });
 
 // 월간 회고는 AI 토큰을 많이 먹으므로 하루 5번으로 더 빡빡하게 제한!
