@@ -177,7 +177,7 @@ app.post('/analyze', analyzeLimiter, async (req, res) => {
             - Assign 0 points to irrelevant virtues.
         
             [Commentary Guidelines]
-            1. Length: Provide a deep, insightful response (approx. 100-200 Korean characters).
+            1. Length: Provide a deep, insightful response (approx. 250-350 Korean characters).
             2. Tone: Intellectual, empathetic, and poetic. Offer a psychological reflection.
             3. Language: The "comment" field MUST be in Korean.
 
